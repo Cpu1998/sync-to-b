@@ -1,0 +1,21 @@
+{
+    "version":  2,
+    "dataRoot":  "data",
+    "defaultKeep":  20,
+    "projects":  [
+                     {
+                         "id":  "demo-docs",
+                         "name":  "示例项目 · 文档与数据",
+                         "source":  "sample\\demo-source",
+                         "target":  "sample\\demo-target",
+                         "exclude":  [
+                                         "*.tmp",
+                                         "cache"
+                                     ],
+                         "keep":  10,
+                         "preCommand":  "",
+                         "postCommand":  "",
+                         "note":  "自带的演示项目，可以直接点「全量备份」体验完整流程；不需要了可删除本项。"
+                     }
+                 ]
+}

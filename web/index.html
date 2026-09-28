@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SyncKit · 增量备份中心</title>
+<style>
+  :root{
+    --bg:#f1f3f7; --panel:#ffffff; --panel2:#f8fafc; --line:#e3e7ee; --line2:#eef1f6;
+    --text:#111827; --muted:#6b7280; --muted2:#9aa3af;
+    --brand:#2f6fed; --brand-weak:#e8f0fe; --brand-dark:#1d54c4;
+    --ok:#0f9d58; --ok-weak:#e7f6ee; --warn:#d97706; --warn-weak:#fdf3e3;
+    --err:#dc2626; --err-weak:#fdecec; --purple:#7c3aed; --purple-weak:#f1eafe;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 6px 20px -8px rgba(16,24,40,.12);
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font:14px/1.55 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  code,kbd,.mono{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
+
+  /* ---------- 顶部 ---------- */
+  header{
+    height:58px;background:var(--panel);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;padding:0 20px;position:sticky;top:0;z-index:30;
+  }
+  .logo{width:30px;height:30px;flex:0 0 30px}
+  .brand{font-weight:650;font-size:15.5px;letter-spacing:.2px}
+  .brand small{display:block;font-weight:400;font-size:11.5px;color:var(--muted);letter-spacing:0}
+  .spacer{flex:1}
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:12px;
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted2)}
+  .dot.on{background:var(--ok);box-shadow:0 0 0 3px var(--ok-weak)}
+  .dot.off{background:var(--err);box-shadow:0 0 0 3px var(--err-weak)}
+
+  main{padding:18px 20px 260px;max-width:1560px;margin:0 auto}
+
+  /* ---------- 工具条 ---------- */
+  .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .toolbar .title{font-size:16px;font-weight:650;margin-right:4px}
+  .toolbar .count{color:var(--muted);font-size:12.5px}
+  .grow{flex:1}
+
+  button{
+    font:inherit;font-size:13px;height:32px;padding:0 12px;border-radius:8px;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:var(--text);
+    display:inline-flex;align-items:center;gap:6px;transition:.13s;white-space:nowrap;
+  }
+  button:hover{border-color:#cdd5e1;background:#fbfcfe}
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  button.primary:hover{background:var(--brand-dark);border-color:var(--brand-dark)}
+  button.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+  button.ghost:hover{background:var(--panel2);color:var(--text)}
+  button.danger{border-color:#f3c9c9;color:var(--err);background:#fff}
+  button.danger:hover{background:var(--err-weak)}
+  button.sm{height:28px;padding:0 10px;font-size:12.5px}
+  button.pill{border-radius:999px}
+
+  /* ---------- 卡片 ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:14px}
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:12px;
+    transition:.15s;
+  }
+  .card:hover{border-color:#cfd8e6;box-shadow:0 2px 4px rgba(16,24,40,.06),0 14px 28px -12px rgba(16,24,40,.18)}
+  .card.selected{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-weak),var(--shadow)}
+  .card-head{display:flex;align-items:flex-start;gap:10px}
+  .card-name{font-weight:650;font-size:15px;line-height:1.3}
+  .card-id{color:var(--muted2);font-size:12px;margin-top:2px}
+  .tag{
+    display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:6px;
+    font-size:11.5px;font-weight:600;letter-spacing:.2px;
+  }
+  .tag.src{background:var(--brand-weak);color:var(--brand-dark)}
+  .tag.tgt{background:var(--ok-weak);color:#0b7a45}
+  .tag.warn{background:var(--warn-weak);color:#a35c05}
+  .tag.err{background:var(--err-weak);color:#a51c1c}
+  .tag.n{background:var(--purple-weak);color:#5b21b6}
+
+  .paths{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+  .pathrow{display:flex;align-items:center;gap:8px;min-width:0}
+  .pathrow .lbl{flex:0 0 30px;color:var(--muted2);font-size:11.5px}
+  .pathrow .val{
+    flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    background:var(--panel2);border:1px solid var(--line2);border-radius:6px;padding:3px 8px;
+    color:#374151;font-size:12px;cursor:copy;
+  }
+  .pathrow .val:hover{background:#eef3fb;border-color:#d5e2f8}
+  .pathrow .val.bad{color:var(--err);background:var(--err-weak);border-color:#f5d0d0}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .stat{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;text-align:left}
+  .stat b{display:block;font-size:16px;font-weight:650;letter-spacing:-.2px}
+  .stat span{display:block;color:var(--muted);font-size:11.5px;margin-top:1px}
+  .stat.hi b{color:var(--brand)}
+  .stat.warnstat b{color:var(--warn)}
+  .stat.okstat b{color:var(--ok)}
+
+  .chain{font-size:11.5px;color:var(--muted);background:var(--panel2);border:1px dashed var(--line);border-radius:8px;padding:7px 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chain b{color:#374151;font-weight:600}
+  .actions{display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--line2);padding-top:12px}
+
+  .empty{
+    background:var(--panel);border:1px dashed var(--line);border-radius:var(--radius);
+    padding:44px 20px;text-align:center;color:var(--muted);
+  }
+  .empty h3{margin:0 0 6px;font-size:15px;color:var(--text)}
+
+  /* ---------- 侧抽屉 ---------- */
+  .drawer{
+    position:fixed;top:58px;right:0;bottom:0;width:min(620px,94vw);background:var(--panel);
+    border-left:1px solid var(--line);box-shadow:-14px 0 34px -20px rgba(16,24,40,.3);
+    z-index:40;display:flex;flex-direction:column;transform:translateX(102%);transition:transform .2s ease;
+  }
+  .drawer.open{transform:none}
+  .drawer-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .tabs{display:flex;gap:2px;padding:10px 14px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tab{padding:7px 12px;border-radius:8px 8px 0 0;font-size:13px;color:var(--muted);cursor:pointer;border:1px solid transparent;border-bottom:none}
+  .tab:hover{color:var(--text);background:var(--panel2)}
+  .tab.active{color:var(--brand);background:var(--brand-weak);border-color:#d6e3fb}
+  .drawer-body{flex:1;overflow:auto;padding:16px 18px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line2);vertical-align:top}
+  th{color:var(--muted);font-weight:600;background:var(--panel2);position:sticky;top:0;font-size:11.5px;letter-spacing:.3px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:hover td{background:#fbfcfe}
+  .kind{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+  .kind.full{background:var(--purple)} .kind.inc{background:var(--brand)}
+  .kv{display:grid;grid-template-columns:110px 1fr;gap:8px 12px;font-size:13px;margin-bottom:16px}
+  .kv .k{color:var(--muted)}
+  .kv .v{word-break:break-all}
+  .hint{color:var(--muted);font-size:12.5px}
+  .note{background:var(--brand-weak);border:1px solid #d6e3fb;color:#1e40af;border-radius:8px;padding:9px 11px;font-size:12.5px;margin-bottom:14px}
+  .note.warn{background:var(--warn-weak);border-color:#f5dcb4;color:#8a5205}
+  .note.err{background:var(--err-weak);border-color:#f5d0d0;color:#991b1b}
+
+  /* ---------- 日志面板 ---------- */
+  .logpanel{
+    position:fixed;left:0;right:0;bottom:0;height:230px;background:#0f172a;color:#dbe4f3;
+    border-top:1px solid #1e293b;z-index:35;display:flex;flex-direction:column;
+    transition:height .18s ease;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;
+  }
+  .logpanel.collapsed{height:40px}
+  .logpanel.hidden{display:none}
+  .log-head{height:40px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #1e293b;flex:0 0 40px}
+  .log-head .t{font-weight:600;color:#e8eefb;font-family:system-ui,"Microsoft YaHei",sans-serif;font-size:13px}
+  .log-head .s{color:#8ba0c0;font-family:system-ui,"Microsoft YaHei",sans-serif;font-size:12px}
+  .log-body{flex:1;overflow:auto;padding:10px 14px;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+  .lg-INFO{color:#c7d3ea} .lg-WARN{color:#fbbf24} .lg-ERROR{color:#f87171} .lg-OK{color:#4ade80} .lg-STEP{color:#7dd3fc}
+  .logpanel .btn-close{background:transparent;border-color:#334155;color:#cbd5e1;height:26px}
+  .logpanel .btn-close:hover{background:#1e293b;border-color:#475569;color:#fff}
+  .spin{width:12px;height:12px;border:2px solid #64748b;border-top-color:#e2e8f0;border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---------- 弹窗 ---------- */
+  .modal{position:fixed;inset:0;background:rgba(16,24,40,.42);z-index:60;display:flex;align-items:center;justify-content:center;padding:20px}
+  .modal.hidden{display:none}
+  .modal-box{background:var(--panel);border-radius:14px;box-shadow:0 24px 60px -18px rgba(16,24,40,.45);width:min(620px,96vw);max-height:88vh;display:flex;flex-direction:column}
+  .modal-box.wide{width:min(880px,96vw)}
+  .modal-head{padding:16px 20px;border-bottom:1px solid var(--line);font-weight:650;font-size:15px;display:flex;align-items:center;gap:10px}
+  .modal-body{padding:18px 20px;overflow:auto}
+  .modal-foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:var(--panel2);border-radius:0 0 14px 14px}
+  .field{margin-bottom:14px}
+  .field > label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px;font-weight:600}
+  input[type=text],input[type=number],select,textarea{
+    width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+    background:#fff;color:var(--text);outline:none;
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-weak)}
+  textarea{resize:vertical;min-height:64px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+  .row{display:flex;gap:10px;align-items:flex-end}
+  .row .field{flex:1;margin-bottom:0}
+  .inline{display:flex;align-items:center;gap:8px;font-size:13px}
+  .chk{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;padding:5px 0}
+  .mini{font-size:11.5px;color:var(--muted2);margin-top:4px}
+
+  .picker{display:grid;grid-template-columns:150px 1fr;gap:12px;height:340px}
+  .picker .col{border:1px solid var(--line);border-radius:10px;overflow:auto;background:var(--panel2)}
+  .picker .item{padding:6px 10px;font-size:12.5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .picker .item:hover{background:#e9f0fd}
+  .picker .item.drive{font-weight:600}
+  .picker .item .sub{color:var(--muted);font-size:11px;margin-left:6px;font-weight:400}
+  .crumb{display:flex;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:8px;align-items:center}
+  .crumb span{cursor:pointer;padding:2px 4px;border-radius:4px}
+  .crumb span:hover{background:var(--panel2);color:var(--brand)}
+  .pkbar{display:flex;gap:8px;margin-bottom:8px}
+  .pkbar input{flex:1}
+
+  #toasts{position:fixed;top:70px;right:20px;z-index:80;display:flex;flex-direction:column;gap:8px}
+  .toast{
+    background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--brand);
+    border-radius:10px;box-shadow:var(--shadow);padding:11px 14px;font-size:13px;min-width:240px;max-width:420px;
+    animation:in .18s ease;
+  }
+  .toast.ok{border-left-color:var(--ok)} .toast.err{border-left-color:var(--err)} .toast.warn{border-left-color:var(--warn)}
+  .toast b{display:block;margin-bottom:2px}
+  .toast .m{color:var(--muted);font-size:12.5px;word-break:break-all}
+  @keyframes in{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+
+  .banner{margin:0 0 14px;border-radius:10px;padding:12px 14px;font-size:13px;border:1px solid}
+  .banner.err{background:var(--err-weak);border-color:#f5d0d0;color:#991b1b}
+  .hidden{display:none !important}
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:6px 0 16px}
+  .flow .node{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:var(--text)}
+  .flow .arw{color:var(--muted2)}
+  details{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:10px;background:var(--panel2)}
+  summary{cursor:pointer;font-size:13px;font-weight:600}
+  details p,details ul{margin:8px 0 4px;font-size:12.5px;color:#374151}
+  details ul{padding-left:18px}
+</style>
+</head>
+<body>
+
+<header>
+  <svg class="logo" viewBox="0 0 32 32" fill="none">
+    <rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="#2f6fed"/>
+    <path d="M9 20.5c1.6 1.4 3.6 2.1 5.9 2.1 3.2 0 5-1.3 5-3.2 0-1.8-1.4-2.6-4.4-3.2-3.6-.7-5.6-2-5.6-4.6C9.9 8.9 12.4 7.4 16 7.4c2.1 0 4 .5 5.5 1.5" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/>
+    <path d="M16 5.6v20.8" stroke="#fff" stroke-width="2.1" stroke-linecap="round" opacity=".55"/>
+  </svg>
+  <div class="brand">增量备份中心<small>SyncKit <span id="ver">…</span> · 通用多项目增量备份 / 跨机转移</small></div>
+  <div class="spacer"></div>
+  <span class="chip"><i class="dot" id="conndot"></i><span id="conn">正在连接…</span></span>
+  <span class="chip" id="hostchip">—</span>
+  <button class="ghost sm" onclick="openHelp()">使用说明</button>
+</header>
+
+<main>
+  <div id="offline" class="banner err hidden">
+    <b>未连接到本地服务。</b>
+    本界面需要在本地服务的环境下打开：双击工具目录里的 <code>start-gui.bat</code>（或运行
+    <code>powershell -File bin\start-gui.ps1</code>），浏览器会自动打开正确的地址。
+  </div>
+
+  <div class="toolbar">
+    <span class="title">我的项目</span>
+    <span class="count" id="pcount"></span>
+    <span class="grow"></span>
+    <button class="primary" onclick="openProjectForm()">＋ 新建项目</button>
+    <button onclick="runJob('backup',{})">全部增量备份</button>
+    <button onclick="reload()">刷新</button>
+    <button class="ghost" onclick="openRoot()">打开数据目录</button>
+  </div>
+
+  <div class="grid" id="grid"></div>
+</main>
+
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div style="flex:1">
+      <div class="card-name" id="dname">—</div>
+      <div class="card-id" id="did">—</div>
+    </div>
+    <button class="sm" onclick="openProjectForm(detail&&detail.id)">编辑</button>
+    <button class="ghost sm" onclick="closeDrawer()">关闭</button>
+  </div>
+  <div class="tabs" id="dtabs"></div>
+  <div class="drawer-body" id="dbody"></div>
+</aside>
+
+<div class="logpanel hidden collapsed" id="logpanel">
+  <div class="log-head">
+    <span class="spin hidden" id="logspin"></span>
+    <span class="t" id="logtitle">任务日志</span>
+    <span class="s" id="logstatus"></span>
+    <span class="grow" style="flex:1"></span>
+    <button class="btn-close sm" id="logcancel" onclick="cancelJob()">取消任务</button>
+    <button class="btn-close sm" onclick="toggleLog()">收起/展开</button>
+  </div>
+  <div class="log-body" id="logbody"></div>
+</div>
+
+<div class="modal hidden" id="modal"><div class="modal-box" id="modalBox"></div></div>
+<div class="modal hidden" id="picker" style="z-index:70"><div class="modal-box wide" id="pickerBox"></div></div>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const TOKEN = "__SYNC_TOKEN__";
+let S = { projects: [], runningJob: null };
+let detail = null, detailTab = "packages", jobTimer = null, jobId = null, modalOnPick = null;
+
+/* ---------------- 基础 ---------------- */
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const arr = x => Array.isArray(x) ? x : (x == null ? [] : [x]);
+const $ = id => document.getElementById(id);
+
+async function api(path, opt) {
+  opt = opt || {};
+  const headers = { "X-Sync-Token": TOKEN };
+  let body = null;
+  if (opt.body !== undefined && opt.body !== null) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opt.body); }
+  const r = await fetch(path, { method: opt.method || "GET", headers, body });
+  let j = null;
+  try { j = await r.json(); } catch (e) { }
+  if (!r.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
+  return j;
+}
+
+function toast(title, msg, type) {
+  const el = document.createElement("div");
+  el.className = "toast " + (type || "");
+  el.innerHTML = "<b>" + esc(title) + "</b>" + (msg ? '<div class="m">' + esc(msg) + "</div>" : "");
+  $("toasts").appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transition = ".3s"; setTimeout(() => el.remove(), 320); }, type === "err" ? 9000 : 4200);
+}
+
+function fmtSize(b) {
+  b = Number(b) || 0;
+  if (b >= 1073741824) return (b / 1073741824).toFixed(2) + " GB";
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + " MB";
+  if (b >= 1024) return Math.round(b / 1024) + " KB";
+  return b + " B";
+}
+
+function modal(title, bodyHtml, footHtml) {
+  $("modalBox").innerHTML =
+    '<div class="modal-head">' + esc(title) + '<span style="flex:1"></span>' +
+    '<button class="ghost sm" onclick="closeModal()">✕</button></div>' +
+    '<div class="modal-body">' + bodyHtml + '</div>' +
+    '<div class="modal-foot">' + (footHtml || '<button onclick="closeModal()">关闭</button>') + '</div>';
+  $("modal").classList.remove("hidden");
+}
+function closeModal() { $("modal").classList.add("hidden"); $("modal").classList.remove("wide"); }
+$("modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
+
+function copyText(t) {
+  navigator.clipboard.writeText(t).then(() => toast("已复制路径", t), () => toast("复制失败", "", "err"));
+}
+
+/* ---------------- 状态加载 ---------------- */
+async function reload() {
+  try {
+    const st = await api("/api/state");
+    S = st;
+    window.S = S;
+    $("offline").classList.add("hidden");
+    $("conndot").className = "dot on";
+    $("conn").textContent = "已连接";
+    $("hostchip").textContent = (st.host || "") + (st.user ? "\\" + st.user : "") + " · 端口 " + st.port;
+    $("ver").textContent = "v" + st.version;
+    const ps = arr(st.projects);
+    $("pcount").textContent = ps.length ? ("共 " + ps.length + " 个 · 数据目录 " + st.dataRoot) : "";
+    renderGrid(ps);
+    if (detail) {
+      const still = ps.find(p => p.id === detail.id);
+      if (still) { detail = still; renderDrawer(); }
+    }
+    if (st.runningJob && !jobId) { jobId = st.runningJob.id; showLog(st.runningJob.title); pollJob(); }
+    const want = new URLSearchParams(location.search).get("open");
+    if (want && !window.__autoOpened) { window.__autoOpened = true; openDetail(want); }
+  } catch (e) {
+    $("offline").classList.remove("hidden");
+    $("conndot").className = "dot off";
+    $("conn").textContent = "未连接";
+    $("hostchip").textContent = "—";
+  }
+}
+
+function renderGrid(ps) {
+  const g = $("grid");
+  if (!ps.length) {
+    g.innerHTML = '<div class="empty"><h3>还没有项目</h3>' +
+      '<p>点右上角「＋ 新建项目」，把一个要备份的目录登记进来即可。</p>' +
+      '<p class="hint">每个项目包含：源目录（要备份的）、目标目录（还原到哪）、排除规则。</p>' +
+      '<button class="primary" onclick="openProjectForm()">＋ 新建项目</button></div>';
+    return;
+  }
+  g.innerHTML = ps.map(p => {
+    const hasSrc = !!p.source, hasTgt = !!p.target;
+    const role = hasSrc && hasTgt ? '<span class="tag n">源 + 目标</span>'
+      : hasSrc ? '<span class="tag src">备份端</span>'
+        : hasTgt ? '<span class="tag tgt">还原端</span>' : '<span class="tag err">未配置</span>';
+    const srcCls = p.source ? (p.sourceExists ? "" : " bad") : " bad";
+    const tgtCls = p.target ? "" : " bad";
+    const tgtBadge = (p.target && !p.targetExists)
+      ? ' <span class="tag warn" style="margin-left:2px;flex:0 0 auto">本机无此目录</span>' : "";
+    const pendingTag = p.pendingCount > 0 ? '<span class="tag warn">待应用 ' + p.pendingCount + '</span>' : "";
+    const errNote = p.error ? '<div class="note err">读取状态出错：' + esc(p.error) + "</div>" : "";
+    const chain = p.latestPackage
+      ? '最新包 <b>' + esc(p.latestPackage) + "</b> · 快照 " + (p.snapshotFiles || 0) + " 个文件 / " + fmtSize(p.snapshotBytes)
+      : "还没有生成过备份包";
+    return '<div class="card' + (detail && detail.id === p.id ? " selected" : "") + '" data-id="' + esc(p.id) + '">' +
+      '<div class="card-head">' +
+        '<div style="flex:1"><div class="card-name">' + esc(p.name) + "</div>" +
+        '<div class="card-id mono">' + esc(p.id) + "</div></div>" +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + role + pendingTag + "</div>" +
+      "</div>" + errNote +
+      '<div class="paths">' +
+        '<div class="pathrow"><span class="lbl">源</span><span class="val' + srcCls + '" title="点击复制" onclick="event.stopPropagation();copyText(this.textContent)">' + esc(p.source || "（未配置）") + "</span></div>" +
+        '<div class="pathrow"><span class="lbl">目标</span><span class="val' + tgtCls + '" title="点击复制" onclick="event.stopPropagation();copyText(this.textContent)">' + esc(p.target || "（未配置）") + "</span>" + tgtBadge + "</div>" +
+      "</div>" +
+      '<div class="stats">' +
+        '<div class="stat"><b>' + (p.snapshotFiles || 0) + "</b><span>快照文件</span></div>" +
+        '<div class="stat hi"><b>' + (p.packageCount || 0) + "</b><span>备份包</span></div>" +
+        '<div class="stat"><b>' + fmtSize(p.packageBytes) + "</b><span>包占用</span></div>" +
+        '<div class="stat ' + (p.pendingCount > 0 ? "warnstat" : "") + '"><b>' + (p.pendingCount || 0) + "</b><span>待应用</span></div>" +
+      "</div>" +
+      '<div class="chain">' + chain + "</div>" +
+      '<div class="actions">' +
+        (hasSrc ? '<button class="primary sm" onclick="event.stopPropagation();runJob(\'backup\',{project:\'' + esc(p.id) + '\'})">增量备份</button>' +
+                  '<button class="sm" onclick="event.stopPropagation();runJob(\'backup\',{project:\'' + esc(p.id) + '\',full:true})">全量备份</button>' +
+                  '<button class="sm" onclick="event.stopPropagation();runJob(\'backup\',{project:\'' + esc(p.id) + '\',dryRun:true})">预览差异</button>' : "") +
+        (p.packageCount > 0 ? '<button class="sm" onclick="event.stopPropagation();openExport(\'' + esc(p.id) + '\')">导出转移包</button>' : "") +
+        (hasTgt ? '<button class="sm" onclick="event.stopPropagation();runJob(\'restore\',{project:\'' + esc(p.id) + '\',plan:true})">还原预演</button>' : "") +
+        '<button class="ghost sm" onclick="event.stopPropagation();openDetail(\'' + esc(p.id) + '\')">详情</button>' +
+      "</div></div>";
+  }).join("");
+  g.querySelectorAll(".card").forEach(c => c.addEventListener("click", () => openDetail(c.dataset.id)));
+}
+
+/* ---------------- 详情抽屉 ---------------- */
+function openDetail(id) {
+  detail = S.projects.find(p => p.id === id);
+  if (!detail) return;
+  $("drawer").classList.add("open");
+  renderDrawer();
+  renderGrid(S.projects);
+}
+function closeDrawer() { $("drawer").classList.remove("open"); detail = null; renderGrid(S.projects); }
+
+function renderDrawer() {
+  const p = detail; if (!p) return;
+  $("dname").textContent = p.name;
+  $("did").textContent = p.id;
+  const tabs = [["packages", "包历史"], ["inbox", "收件箱"], ["exports", "转移记录"], ["info", "配置"]];
+  $("dtabs").innerHTML = tabs.map(t => '<div class="tab' + (detailTab === t[0] ? " active" : "") + '" onclick="switchTab(\'' + t[0] + '\')">' + t[1] + "</div>").join("");
+  loadTab();
+}
+function switchTab(t) { detailTab = t; renderDrawer(); }
+
+async function loadTab() {
+  const p = detail; if (!p) return;
+  $("dbody").innerHTML = '<p class="hint">加载中…</p>';
+  try {
+    if (detailTab === "packages") {
+      const r = await api("/api/packages?project=" + encodeURIComponent(p.id));
+      const items = arr(r.items);
+      $("dbody").innerHTML = items.length ? tablePkgs(items) :
+        '<div class="note">还没有备份包。点项目卡片上的「增量备份」开始第一次备份（首次请用「全量备份」）。</div>';
+    } else if (detailTab === "inbox") {
+      const r = await api("/api/inbox?project=" + encodeURIComponent(p.id));
+      const ib = r.inbox || {};
+      const items = arr(ib.packages);
+      let h = '<div class="kv">' +
+        '<div class="k">当前状态</div><div class="v mono">' + esc(ib.current || "（尚未应用过）") + "</div>" +
+        '<div class="k">更新时间</div><div class="v">' + esc(ib.updatedAt || "-") + "</div>" +
+        '<div class="k">可应用链</div><div class="v mono">' + (arr(ib.chain).length ? arr(ib.chain).map(esc).join(" → ") : "—") + "</div>" +
+        "</div>";
+      if (arr(ib.notes).length) h += arr(ib.notes).map(n => '<div class="note warn">' + esc(n) + "</div>").join("");
+      h += items.length
+        ? '<table><thead><tr><th>包</th><th>类型</th><th class="num">文件</th><th class="num">删除</th><th class="num">大小</th><th>能否应用</th></tr></thead><tbody>' +
+          items.map(i => "<tr><td class='mono'>" + esc(i.name) + "</td><td>" +
+            (i.type === "full" ? "全量" : "增量") + "</td><td class='num'>" + i.files + "</td><td class='num'>" + i.deleted +
+            "</td><td class='num'>" + esc(i.sizeText) + "</td><td>" +
+            (i.applies ? '<span class="tag ok" style="background:var(--ok-weak);color:#0b7a45">是</span>' : '<span class="tag warn">否</span>') +
+            "</td></tr>").join("") + "</tbody></table>"
+        : '<div class="note">收件箱是空的。<br>' +
+          "备份端导出转移包 → 在目标机用「导入转移包」导入，或直接把包拷进下面这个目录：<br><code>" + esc(p.paths ? p.paths.inboxDir : "") + "</code></div>";
+      h += '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="primary sm" onclick="runJob(\'restore\',{project:\'' + esc(p.id) + '\'})">应用收件箱中的包</button>' +
+        '<button class="sm" onclick="runJob(\'restore\',{project:\'' + esc(p.id) + '\',plan:true})">还原预演</button>' +
+        '<button class="sm" onclick="openImport()">导入转移包</button>' +
+        '<button class="ghost sm" onclick="openPath(\'' + esc(p.paths ? p.paths.inboxDir : "") + '\')">打开收件箱</button></div>';
+      $("dbody").innerHTML = h;
+    } else if (detailTab === "exports") {
+      const r = await api("/api/exports?project=" + encodeURIComponent(p.id));
+      const items = arr(r.items);
+      let h = '<div class="flow"><span class="node">选包</span><span class="arw">→</span><span class="node">打包成单一转移包</span><span class="arw">→</span><span class="node">U 盘 / 共享 / 目录</span><span class="arw">→</span><span class="node">目标机双击 restore.bat</span></div>';
+      h += items.length
+        ? '<table><thead><tr><th>时间</th><th>去向</th><th>形式</th><th>包数</th></tr></thead><tbody>' +
+          items.slice().reverse().map(i => "<tr><td>" + esc(i.at) + "</td><td style='word-break:break-all'>" + esc(i.dest) +
+            "</td><td>" + esc(i.format) + "</td><td class='num'>" + arr(i.packages).length + "</td></tr>").join("") +
+          "</tbody></table>"
+        : '<div class="note">还没有导出记录。「导出转移包」默认只导出<b>尚未导出过</b>的新包，日常转移量很小。</div>';
+      $("dbody").innerHTML = h;
+    } else {
+      $("dbody").innerHTML = '<div class="kv">' +
+        '<div class="k">项目 ID</div><div class="v mono">' + esc(p.id) + "</div>" +
+        '<div class="k">源目录</div><div class="v mono">' + esc(p.source || "（未配置）") + (p.source && !p.sourceExists ? ' <span class="tag err">不存在</span>' : "") + "</div>" +
+        '<div class="k">目标目录</div><div class="v mono">' + esc(p.target || "（未配置）") + "</div>" +
+        '<div class="k">排除规则</div><div class="v mono">' + (arr(p.exclude).length ? arr(p.exclude).map(esc).join("<br>") : "（无）") + "</div>" +
+        '<div class="k">保留包数</div><div class="v">' + (p.keep > 0 ? p.keep + " 个（更早的自动清理）" : "不限制（在项目设置里可改）") + "</div>" +
+        '<div class="k">前置命令</div><div class="v mono">' + esc(p.preCommand || "（无）") + "</div>" +
+        '<div class="k">后置命令</div><div class="v mono">' + esc(p.postCommand || "（无）") + "</div>" +
+        '<div class="k">数据目录</div><div class="v mono">' + esc(p.paths ? p.paths.projectDir : "") + "</div>" +
+        '<div class="k">备注</div><div class="v">' + esc(p.note || "（无）") + "</div>" +
+        '<div class="k">状态刷新</div><div class="v">' + esc(p.computedAt || "-") + "</div>" +
+        "</div>" +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="sm" onclick="openProjectForm(\'' + esc(p.id) + '\')">编辑配置</button>' +
+        '<button class="ghost sm" onclick="openPath(\'' + esc(p.paths ? p.paths.projectDir : "") + '\')">打开数据目录</button>' +
+        '<button class="danger sm" onclick="delProject(\'' + esc(p.id) + '\')">删除项目</button></div>' +
+        '<p class="mini">删除项目只会从 projects.json 里移除配置，不会删除磁盘上的备份包。</p>';
+    }
+  } catch (e) { $("dbody").innerHTML = '<div class="note err">' + esc(e.message) + "</div>"; }
+}
+
+function tablePkgs(items) {
+  return '<table><thead><tr><th>包</th><th>类型</th><th class="num">文件</th><th class="num">删除</th><th class="num">大小</th><th>生成时间</th></tr></thead><tbody>' +
+    items.map(i => "<tr><td class='mono'><span class='kind " + (i.type === "full" ? "full" : "inc") + "'></span>" + esc(i.name) + "</td><td>" +
+      (i.type === "full" ? "全量" : "增量") + "</td><td class='num'>" + i.files + "</td><td class='num'>" + i.deleted +
+      "</td><td class='num'>" + esc(i.sizeText) + "</td><td>" + esc(i.created || "") + "</td></tr>").join("") + "</tbody></table>";
+}
+
+/* ---------------- 任务运行 ---------------- */
+async function runJob(action, payload) {
+  payload = payload || {};
+  try {
+    const r = await api("/api/run", { method: "POST", body: Object.assign({ action: action }, payload) });
+    jobId = r.id;
+    showLog(r.title);
+    pollJob();
+  } catch (e) { toast("无法启动任务", e.message, "err"); }
+}
+
+function showLog(title) {
+  const lp = $("logpanel");
+  lp.classList.remove("hidden");
+  lp.classList.remove("collapsed");
+  $("logtitle").textContent = title || "任务日志";
+  $("logbody").innerHTML = "";
+  $("logspin").classList.remove("hidden");
+  $("logcancel").classList.remove("hidden");
+  $("logstatus").textContent = "运行中…";
+}
+function toggleLog() { $("logpanel").classList.toggle("collapsed"); }
+
+function renderLog(text) {
+  const lines = String(text || "").split("\n");
+  $("logbody").innerHTML = lines.map(l => {
+    const m = l.match(/^\S+ \S+ \[(INFO|WARN|ERROR|OK|STEP)\]\s*([\s\S]*)$/);
+    if (m) return '<span class="lg-' + m[1] + '">' + esc(m[2]) + "</span>";
+    return esc(l);
+  }).join("\n");
+  const b = $("logbody");
+  b.scrollTop = b.scrollHeight;
+}
+
+async function pollJob() {
+  if (!jobId) return;
+  if (jobTimer) clearTimeout(jobTimer);
+  try {
+    const r = await api("/api/job?id=" + encodeURIComponent(jobId));
+    const j = r.job;
+    renderLog(j.log);
+    if (j.running) { jobTimer = setTimeout(pollJob, 700); return; }
+    $("logspin").classList.add("hidden");
+    $("logcancel").classList.add("hidden");
+    $("logstatus").textContent = j.exit === 0 ? "已完成" : ("已结束（退出码 " + j.exit + "）");
+    if (j.exit === 0) toast("任务完成", j.title, "ok");
+    else toast("任务失败", "退出码 " + j.exit + "，请看下方日志", "err");
+    jobId = null;
+    reload();
+  } catch (e) {
+    jobTimer = setTimeout(pollJob, 1200);
+  }
+}
+
+async function cancelJob() {
+  if (!jobId) return;
+  if (!confirm("确定要中止正在运行的任务吗？已写入的文件不会回滚，但备份/还原操作都可以安全重跑。")) return;
+  try { await api("/api/job/cancel", { method: "POST", body: { id: jobId } }); toast("已发送中止指令", "", "warn"); }
+  catch (e) { toast("取消失败", e.message, "err"); }
+}
+
+function openPath(p) { if (!p) return; api("/api/open?path=" + encodeURIComponent(p)).catch(e => toast("无法打开目录", e.message, "err")); }
+function openRoot() { if (S.toolRoot) openPath(S.dataRoot || S.toolRoot); }
+
+/* ---------------- 项目表单 ---------------- */
+function openProjectForm(id) {
+  const p = id ? S.projects.find(x => x.id === id) : null;
+  const v = k => p ? (p[k] == null ? "" : p[k]) : "";
+  const ex = p && p.exclude ? arr(p.exclude).join("\n") : "";
+  const body =
+    '<div class="row"><div class="field"><label>项目 ID（字母数字，用于目录名）</label>' +
+    '<input type="text" id="f_id" value="' + esc(v("id")) + '" ' + (p ? "readonly style='background:var(--panel2);color:var(--muted)'" : 'placeholder="例如 drive-backup"') + "></div>" +
+    '<div class="field"><label>显示名称</label><input type="text" id="f_name" value="' + esc(v("name")) + '" placeholder="例如 文档盘备份"></div></div>' +
+    '<div class="field"><label>源目录（要备份的目录，留空表示本机不参与备份）</label><div class="row">' +
+    '<input type="text" id="f_source" value="' + esc(v("source")) + '" placeholder="D:\\公司文档">' +
+    '<button onclick="pickFolder(\'f_source\')">浏览…</button></div></div>' +
+    '<div class="field"><label>目标目录（还原到哪台机器 / 哪个目录，留空表示本机不参与还原）</label><div class="row">' +
+    '<input type="text" id="f_target" value="' + esc(v("target")) + '" placeholder="E:\\还原到此处">' +
+    '<button onclick="pickFolder(\'f_target\')">浏览…</button></div>' +
+    '<div class="mini">源目录在「备份端」填写；目标目录在「还原端」填写。同一台机器可以两者都填。</div></div>' +
+    '<div class="field"><label>排除规则（每行一条）</label><textarea id="f_exclude" placeholder="*.tmp&#10;node_modules&#10;**/cache/**">' + esc(ex) + "</textarea>" +
+    '<div class="mini">支持通配：<code>*.log</code> 任意层级同名文件；<code>node_modules</code> 任意层级同名目录；<code>docs/tmp</code> 指定路径；<code>**/cache/**</code> 任意层级。</div></div>' +
+    '<div class="row"><div class="field"><label>保留最近多少个包（0 = 不清理）</label><input type="number" id="f_keep" min="0" max="9999" value="' + (p ? (p.keep || 0) : 20) + '"></div>' +
+    '<div class="field"><label>备注</label><input type="text" id="f_note" value="' + esc(v("note")) + '"></div></div>' +
+    '<details><summary>高级：备份前后要执行的命令（可选）</summary>' +
+    '<div class="field" style="margin-top:8px"><label>打包前（失败则中止备份）</label><input type="text" id="f_pre" value="' + esc(v("preCommand")) + '" placeholder="docker pause verdaccio"></div>' +
+    '<div class="field"><label>打包后（失败仅告警）</label><input type="text" id="f_post" value="' + esc(v("postCommand")) + '" placeholder="docker unpause verdaccio"></div>' +
+    '<p class="mini">用于打包时保证一致性，例如先暂停正在写数据的服务。留空则什么都不执行。</p></details>';
+  modal(p ? "编辑项目" : "新建项目", body,
+    '<button onclick="closeModal()">取消</button><button class="primary" onclick="saveProject()">保存</button>');
+}
+
+async function saveProject() {
+  const g = k => ($("f_" + k) ? $("f_" + k).value : "");
+  const id = g("id").trim();
+  if (!id) return toast("项目 ID 不能为空", "", "err");
+  const payload = {
+    id, name: g("name").trim(), source: g("source").trim(), target: g("target").trim(),
+    exclude: g("exclude").split("\n").map(s => s.trim()).filter(Boolean),
+    keep: parseInt(g("keep") || "0", 10) || 0,
+    preCommand: g("pre").trim(), postCommand: g("post").trim(), note: g("note").trim()
+  };
+  try {
+    const r = await api("/api/project/save", { method: "POST", body: payload });
+    closeModal(); toast(r.created ? "项目已创建" : "项目已更新", id, "ok"); reload();
+  } catch (e) { toast("保存失败", e.message, "err"); }
+}
+
+async function delProject(id) {
+  if (!confirm("确定删除项目「" + id + "」的配置吗？\n（磁盘上的备份包不会被删除）")) return;
+  try {
+    await api("/api/project/delete", { method: "POST", body: { id } });
+    toast("已删除项目", id, "ok"); closeDrawer(); reload();
+  } catch (e) { toast("删除失败", e.message, "err"); }
+}
+
+/* ---------------- 导出转移包 ---------------- */
+function openExport(id) {
+  const p = S.projects.find(x => x.id === id); if (!p) return;
+  const body =
+    '<div class="note">转移包是<b>一个自包含的 zip</b>：里面装着备份包、还原脚本、说明和校验清单。目标机解压后双击 <code>restore.bat</code> 就能还原，不需要先安装本工具。</div>' +
+    '<div class="field"><label>项目</label><input type="text" value="' + esc(p.name + "（" + p.id + "）") + '" readonly style="background:var(--panel2);color:var(--muted)"></div>' +
+    '<div class="field"><label>导出到（U 盘 / 网络共享 / 任意目录）</label><div class="row">' +
+    '<input type="text" id="x_dest" placeholder="E:/ 或 \\\\电脑B\\共享 或 D:\\备份转移">' +
+    '<button onclick="pickFolder(\'x_dest\')">浏览…</button></div>' +
+    '<div id="x_drives" class="mini" style="margin-top:6px"></div></div>' +
+    '<div class="row"><div class="field"><label>导出范围</label><select id="x_include">' +
+    '<option value="new">只导出未导出过的<b>新包</b>（推荐）</option><option value="all">导出全部现存包</option></select></div>' +
+    '<div class="field"><label>形式</label><select id="x_format">' +
+    '<option value="zip">单文件 zip（便于拷贝）</option><option value="folder">目录（可直接运行）</option></select></div></div>' +
+    '<div class="field"><label>分卷大小 MB（0 = 不分卷；U 盘 4GB 限制时可填 3500）</label>' +
+    '<input type="number" id="x_split" min="0" max="60000" value="0"></div>' +
+    '<div class="field"><label>目标机的还原目录（会预填进转移包，目标机可再改）</label>' +
+    '<input type="text" id="x_tgt" value="' + esc(p.target || "") + '" placeholder="D:\\还原到这里" readonly style="background:var(--panel2);color:var(--muted)">' +
+    '<div class="mini">要改这个路径，请先在项目配置里填写「目标目录」。</div></div>';
+  modal("导出转移包", body, '<button onclick="closeModal()">取消</button><button class="primary" onclick="doExport()">开始导出</button>');
+  window.__expProj = id;
+  loadDrives();
+}
+
+async function loadDrives() {
+  try {
+    const r = await api("/api/drives");
+    const ds = arr(r.drives).filter(d => d.ready);
+    ds.sort((a, b) => (b.removable ? 1 : 0) - (a.removable ? 1 : 0));
+    $("x_drives").innerHTML = "可用盘符：" + ds.map(d =>
+      "<a href='#' onclick=\"document.getElementById('x_dest').value='" + esc(d.path.replace(/\\/g, "/")) + "';return false\" style='color:var(--brand);text-decoration:none;margin-right:8px'>" +
+      esc(d.path) + (d.removable ? " U盘" : "") + "<span style='color:var(--muted2)'> " + esc(d.freeText) + "</span></a>").join("");
+  } catch (e) { }
+}
+
+async function doExport() {
+  const dest = $("x_dest").value.trim();
+  if (!dest) return toast("请先选择导出位置", "", "err");
+  const split = parseInt($("x_split").value || "0", 10) || 0;
+  const include = $("x_include").value, format = $("x_format").value;
+  closeModal();
+  await runJob("export", { project: window.__expProj, dest, include, format, splitMB: split });
+}
+
+/* ---------------- 导入转移包 ---------------- */
+function openImport() {
+  const body =
+    '<div class="note">把别人送来的转移包（zip 或已解压的目录）导入本机：会自动校验每个包的 SHA256，' +
+    "然后放进对应项目的收件箱，再按需应用。</div>" +
+    '<div class="field"><label>转移包路径</label><div class="row">' +
+    '<input type="text" id="i_path" placeholder="E:/sync-project-20260928-170000.zip">' +
+    '<button onclick="pickFolder(\'i_path\')">浏览…</button></div></div>' +
+    '<label class="chk"><input type="checkbox" id="i_apply" checked> 导入后立即应用（否则只入收件箱，等你在「收件箱」里确认）</label>';
+  modal("导入转移包", body, '<button onclick="closeModal()">取消</button><button class="primary" onclick="doImport()">开始导入</button>');
+}
+async function doImport() {
+  const b = $("i_path").value.trim();
+  if (!b) return toast("请先选择转移包", "", "err");
+  const apply = $("i_apply").checked;
+  closeModal();
+  await runJob("import", { bundle: b, apply });
+}
+
+/* ---------------- 目录选择器（独立浮层，不会顶掉下面的表单） ---------------- */
+/* 清洗粘贴进来的路径：去引号、去 file:// 前缀、/ → \、去尾部反斜杠 */
+function pkNorm(p) {
+  let s = String(p == null ? "" : p).trim();
+  if (!s) return "";
+  if ((s[0] === '"' && s.slice(-1) === '"') || (s[0] === "'" && s.slice(-1) === "'")) s = s.slice(1, -1).trim();
+  if (/^file:\/{2,3}/i.test(s)) { try { s = decodeURIComponent(s.replace(/^file:\/{2,3}/i, "")); } catch (e) { } }
+  s = s.replace(/\//g, "\\");
+  s = s.replace(/\\+$/, "");
+  if (/^[a-zA-Z]:$/.test(s)) s += "\\";
+  return s.trim();
+}
+function pickFolder(targetInputId) {
+  modalOnPick = targetInputId;
+  $("pickerBox").innerHTML =
+    '<div class="modal-head">选择目录<span style="flex:1"></span><button class="ghost sm" onclick="pkClose()">✕</button></div>' +
+    '<div class="modal-body">' +
+      '<div class="pkbar">' +
+        '<input type="text" id="pkPath" class="mono" spellcheck="false" placeholder="目录路径 —— 可直接 Ctrl+V 粘贴，或点右侧「粘贴」；回车跳转" onkeydown="pkKey(event)">' +
+        '<button onclick="pkGo()">转到</button>' +
+        '<button onclick="pkPaste()">粘贴</button>' +
+      "</div>" +
+      '<div class="mini" style="margin:0 0 10px">粘贴内容可以是：目录路径、资源管理器「复制文件地址」带引号的路径、<code>file:///D:/...</code>，或某个<b>文件</b>的完整路径（自动跳到它所在目录）。</div>' +
+      '<div id="pk"><p class="hint">加载中…</p></div>' +
+    "</div>" +
+    '<div class="modal-foot"><button onclick="pkClose()">取消</button><button class="primary" onclick="pkUse()">使用当前目录</button></div>';
+  $("picker").classList.remove("hidden");
+  pkLoad("");
+  setTimeout(() => { const b = $("pkPath"); if (b) { b.focus(); b.select(); } }, 30);
+}
+function pkKey(e) { if (e.key === "Enter") { e.preventDefault(); pkGo(); } }
+function pkClose() { $("picker").classList.add("hidden"); modalOnPick = null; }
+function pkGo() {
+  const b = $("pkPath");
+  const p = pkNorm(b ? b.value : "");
+  if (!p) { toast("请填写路径", "例如 D:\\备份", "warn"); return; }
+  if (b) b.value = p;
+  pkLoad(p);
+}
+async function pkPaste() {
+  const b = $("pkPath");
+  let txt = "";
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.readText) throw new Error("unsupported");
+    txt = await navigator.clipboard.readText();
+  } catch (e) {
+    if (b) { b.focus(); b.select(); }
+    toast("无法读取剪贴板", "浏览器未授权：请直接按 Ctrl+V 粘贴到地址栏，再按回车", "warn");
+    return;
+  }
+  const p = pkNorm(txt);
+  if (!p) { toast("剪贴板里没有路径", "", "warn"); return; }
+  if (b) b.value = p;
+  pkLoad(p);
+}
+async function pkLoad(path) {
+  path = pkNorm(path);
+  try {
+    const r = await api("/api/browse?path=" + encodeURIComponent(path || ""));
+    window.__pk = r;
+    const box = $("pkPath"); if (box) box.value = r.path || "";
+    const one = d => '<div class="item' + (d.drive ? " drive" : "") + '" onclick="pkLoad(\'' + esc(String(d.path).replace(/\\/g, "\\\\")) + '\')">' + d.icon + esc(d.name) + (d.sub ? '<span class="sub">' + esc(d.sub) + "</span>" : "") + "</div>";
+    const driveHtml = arr(r.drives).filter(d => d.ready).map(d => one({ path: d.path, name: d.path, drive: true, icon: "💽 ", sub: (d.label || d.driveType || "") + " " + (d.freeText || "") })).join("");
+    const dirHtml = arr(r.dirs).map(d => one({ path: d.path, name: d.name, icon: "📁 " })).join("") ||
+      '<div class="item" style="color:var(--muted2);cursor:default">（没有子目录）</div>';
+    const full = String(r.path || "");
+    const parts = full.split("\\").filter(Boolean);
+    let prefix = "";
+    if (full.slice(0, 2) === "\\\\") { prefix = "\\\\" + (parts.shift() || "") + "\\" + (parts.shift() || "") + "\\"; }
+    let acc = prefix, crumb = '<span onclick="pkLoad(\'\')">此电脑</span>';
+    for (const s of parts) {
+      acc += s + "\\";
+      crumb += '<span class="arw" style="color:var(--muted2)">›</span><span onclick="pkLoad(\'' + esc(acc.replace(/\\/g, "\\\\")) + '\')">' + esc(s) + "</span>";
+    }
+    $("pk").innerHTML = (r.notice ? '<div class="note warn">' + esc(r.notice) + "</div>" : "") +
+      '<div class="crumb">' + crumb + "</div>" +
+      '<div class="picker"><div class="col">' + driveHtml + '</div><div class="col">' + dirHtml + "</div></div>" +
+      '<div class="mini">当前：<span class="mono">' + esc(r.path) + "</span>（点左侧盘符或右侧子目录进入；也可以在上面粘贴路径，确认后点右下角「使用当前目录」）</div>";
+    if (r.notice) toast("路径有误", r.notice, "warn");
+  } catch (e) { $("pk").innerHTML = '<div class="note err">' + esc(e.message) + "</div>"; }
+}
+function pkUse() {
+  const t = modalOnPick ? $(modalOnPick) : null;
+  const b = $("pkPath");
+  const typed = pkNorm(b ? b.value : "");
+  const v = (window.__pk && window.__pk.path) || typed;
+  if (t && v) { t.value = v; toast("已选择", v, "ok"); }
+  pkClose();
+}
+
+/* ---------------- 帮助 ---------------- */
+function openHelp() {
+  const body =
+    '<div class="flow"><span class="node">① 备份端：增量备份</span><span class="arw">→</span>' +
+    '<span class="node">② 导出转移包（单 zip）</span><span class="arw">→</span>' +
+    '<span class="node">③ U 盘 / 共享拷过去</span><span class="arw">→</span>' +
+    '<span class="node">④ 还原端：双击 restore.bat</span></div>' +
+    '<details open><summary>① 备份端怎么用</summary><ul>' +
+    "<li>「＋ 新建项目」→ 填「源目录」= 要备份的目录。</li>" +
+    "<li>首次点「全量备份」建立链条起点；之后日常点「增量备份」，只打包变化的文件，秒级完成。</li>" +
+    "<li>「预览差异」可以先生成清单，确认无误再真备份。</li>" +
+    "<li>删掉的文件会记录进包里，还原端会同步删除。想彻底对齐随时再点一次「全量备份」。</li>" +
+    "</ul></details>" +
+    '<details><summary>② 转移包是什么</summary><ul>' +
+    "<li>点「导出转移包」→ 选 U 盘或目录 → 得到一个自包含的 zip。</li>" +
+    "<li>zip 里自带还原脚本、说明和 SHA256 校验清单；目标机不需要预装本工具。</li>" +
+    "<li>默认只装<b>尚未导出过的新包</b>，所以日常每次转移很小。</li>" +
+    "<li>文件太大超过 U 盘限制时，可以填分卷大小，自动切成多个卷并附上合并脚本。</li>" +
+    "</ul></details>" +
+    '<details><summary>③ 还原端怎么用</summary><ul>' +
+    "<li>把转移包解压到固定目录（例如 <code>D:\\备份同步\\</code>），改一下 <code>sync-tool\\projects.json</code> 里的 target 路径。</li>" +
+    "<li>双击 <code>restore.bat</code>。之后每次都解压到同一个目录覆盖，再双击一次即可。</li>" +
+    "<li>想先看会改什么：<code>restore.bat -Plan</code> 或在界面里点「还原预演」。</li>" +
+    "</ul></details>" +
+    '<details><summary>可靠性机制</summary><ul>' +
+    "<li><b>链校验</b>：每个包记录上一包 ID，缺中间包 / 乱序会明确提示，绝不会应用错。</li>" +
+    "<li><b>先校验后落地</b>：整包解压到临时目录、逐文件 SHA256 全部通过才写入，拷贝损坏不会造成半新半旧。</li>" +
+    "<li><b>失败可重入</b>：打包时被占用的文件不计入清单，下次自动重试；应用操作可以安全重复执行。</li>" +
+    "<li><b>重新对齐</b>：链条断了就重新做一次「全量备份」，还原端应用新全量包即可完全对齐（会自动清理多余文件）。</li>" +
+    "</ul></details>" +
+    '<details><summary>命令行（不想开界面时）</summary>' +
+    '<p class="mini mono">bin\\backup.ps1 -Project 项目ID&nbsp;&nbsp;# 增量备份<br>' +
+    "bin\\backup.ps1 -Full&nbsp;&nbsp;# 全量备份（全部项目）<br>" +
+    "bin\\restore.ps1 -Project 项目ID -Plan&nbsp;&nbsp;# 还原预演<br>" +
+    "bin\\transfer.ps1 -Action export -Project 项目ID -Dest E:\\&nbsp;&nbsp;# 导出转移包</p></details>";
+  modal("使用说明 · SyncKit 增量备份中心", body);
+}
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!$("picker").classList.contains("hidden")) pkClose(); else closeModal();
+});
+
+/* ---------------- 启动 ---------------- */
+reload();
+setInterval(() => { if (!jobId && document.visibilityState === "visible") reload(); }, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# 本机专属配置：里面是每个项目的真实源目录 / 目标目录，只属于当前这台机器
+# 首次使用请复制模板：copy projects.example.json projects.json
+projects.json
+projects.json.bak
+
+# 运行数据：本机的备份状态与包，不应该提交
+data/
+sample/demo-target/
+
+# 工作日志与本地记忆（个人内容，不进仓库）
+.workbuddy/
+
+# 临时产物
+*.log
+*.tmp
