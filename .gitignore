@@ -4,8 +4,9 @@ projects.json
 projects.json.bak
 
 # 运行数据：本机的备份状态与包，不应该提交
-data/
-sample/demo-target/
+# 用 /data/ 锚定到仓库根目录 —— 写成 data/ 会连示例里的 sample/demo-source/data/ 一起忽略掉
+/data/
+/sample/demo-target/
 
 # 工作日志与本地记忆（个人内容，不进仓库）
 .workbuddy/
@@ -13,3 +14,6 @@ sample/demo-target/
 # 临时产物
 *.log
 *.tmp
+
+# 例外：示例目录里故意放了一个会被排除规则跳过的文件，留着它才能演示排除效果
+!/sample/demo-source/cache/skip-me.tmp
