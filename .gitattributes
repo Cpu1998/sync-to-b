@@ -1,0 +1,10 @@
+# 行尾策略
+#
+# .bat / .cmd 必须是 CRLF 行尾。
+# cmd.exe 靠 CR 定位行边界，LF-only 的批处理会被丢行、甚至把文件内容的碎片
+# 当成命令去执行（报「'xxx' 不是内部或外部命令」）。
+# 本机 core.autocrlf=true，不显式声明的话仓库里存的是 LF，重新 clone 出来就是坏的。
+# 另外批处理只放 ASCII：cmd 按 OEM 代码页（中文系统 936）解析文件，
+# 中文内容请统一交给 bin/*.ps1 打印（PS 脚本是 UTF-8 BOM，输出正常）。
+*.bat text eol=crlf
+*.cmd text eol=crlf
